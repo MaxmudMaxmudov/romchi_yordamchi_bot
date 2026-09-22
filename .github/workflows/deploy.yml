@@ -1,0 +1,84 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  APP: romchi-bot
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q .
+      - run: docker build -t $APP .
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency: deploy
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+      WORK_DIR: ${{ secrets.WORK_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH kalitni tayyorlash
+        env:
+          KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Kodni droplet'ga yuklash
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p $SSH_PORT" \
+            --exclude '.git' --exclude '.github' --exclude '.idea' --exclude '.env' \
+            ./ "$SSH_USER@$SSH_HOST:$WORK_DIR/"
+
+      - name: .env ni secret'dan yozish
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          printf '%s\n' "$ENV_FILE" \
+            | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "install -d -m 700 '$WORK_DIR' && install -m 600 /dev/stdin '$WORK_DIR/.env'"
+
+      - name: Build va qayta ishga tushirish
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "APP='$APP' WORK_DIR='$WORK_DIR' bash -s" <<'EOF'
+          set -euo pipefail
+          cd "$WORK_DIR"
+
+          docker build -t "$APP" .
+          docker rm -f "$APP" 2>/dev/null || true
+          docker run -d --name "$APP" --restart unless-stopped \
+            -v "$PWD/.env:/app/.env:ro" \
+            -v "$APP-data:/data" \
+            "$APP"
+          docker image prune -f
+
+          # Ishga tushdimi? Bo'lmasa log bilan yiqilamiz — yashil deploy + o'lik bot bo'lmasin.
+          sleep 10
+          if [ "$(docker inspect -f '{{.State.Running}}' "$APP")" != "true" ]; then
+            docker logs --tail 50 "$APP"
+            exit 1
+          fi
+          docker logs --tail 20 "$APP"
+          EOF

@@ -110,7 +110,55 @@ to'ldirishga xalaqit beradi):
 1. @BotFather'ga yozing → `/mybots` → botingizni tanlang
 2. `Bot Settings` → `Group Privacy` → `Turn off`
 
-## VPS'da doimiy ishlatish (systemd bilan)
+## Droplet'ga avtomatik deploy (GitHub Actions + Docker)
+
+`master`'ga push bo'lishi bilan GitHub Actions kodni tekshiradi, droplet'ga
+yuklaydi, Docker image'ni qayta build qilib, botni qayta ishga tushiradi.
+Workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+
+### 1. Droplet tomonida talab
+
+- `docker` o'rnatilgan bo'lsin (root bo'lmasa: `sudo usermod -aG docker $USER`)
+- `rsync` bo'lsin: `apt install -y rsync`
+- Deploy foydalanuvchisining `~/.ssh/authorized_keys`'iga public kalit qo'shilgan bo'lsin
+
+### 2. GitHub secret'lar (Settings → Secrets and variables → Actions)
+
+| Secret | Nima | Misol |
+|---|---|---|
+| `SSH_HOST` | Droplet IP yoki domen | `159.89.x.x` |
+| `SSH_USER` | SSH foydalanuvchi | `root` |
+| `SSH_PRIVATE_KEY` | Private kalit (`-----BEGIN ...` dan `-----END ...` gacha, to'liq) | |
+| `WORK_DIR` | Droplet'dagi papka (absolute yo'l) | `/opt/romchi-bot` |
+| `ENV_FILE` | `.env` faylining **to'liq matni** (`.env.example` asosida) | `BOT_TOKEN=123:ABC`<br>`TIMEZONE=Asia/Tashkent` |
+| `SSH_PORT` | *(ixtiyoriy)* SSH port, default `22` | `2222` |
+
+Yangi sozlama qo'shish kerak bo'lsa — faqat `ENV_FILE` secret'ini tahrirlash
+kifoya, workflow'ga tegish shart emas.
+
+### 3. Baza qayerda qoladi
+
+SQLite `romchi-bot-data` nomli docker volume'da (`/data/bot.db`) yashaydi, ya'ni
+redeploy'da o'chmaydi. Image ichida `DB_PATH=/data/bot.db` majburan qo'yilgan —
+`.env` dagi `DB_PATH` buni bosib ketmaydi.
+
+Mavjud bazani ko'chirish (bir marta):
+```bash
+docker cp bot.db romchi-bot:/data/bot.db && docker restart romchi-bot
+```
+
+### 4. Foydali buyruqlar (droplet'da)
+
+```bash
+docker logs -f romchi-bot      # loglar
+docker restart romchi-bot      # qayta ishga tushirish
+docker ps                      # holati
+```
+
+Deploy oxirida workflow 10 soniya kutib konteyner tirikligini tekshiradi —
+bot ko'tarilmasa, Actions qizil bo'ladi va loglarni ko'rsatadi.
+
+## VPS'da doimiy ishlatish (systemd bilan — Docker'siz muqobil yo'l)
 
 VPS'ga kodni yuklab (`git clone` yoki `scp`), quyidagicha systemd service yaratish tavsiya etiladi:
 
