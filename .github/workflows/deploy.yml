@@ -46,15 +46,20 @@ jobs:
 
       - name: Kodni droplet'ga yuklash
         run: |
-          rsync -az --delete \
+          rsync -az \
             -e "ssh -i ~/.ssh/deploy_key -p $SSH_PORT" \
-            --exclude '.git' --exclude '.github' --exclude '.idea' --exclude '.env' \
+            --exclude '.git' --exclude '.github' --exclude '.idea' \
+            --exclude '.env' --exclude '*.db' --exclude '*.log' --exclude 'venv' \
             ./ "$SSH_USER@$SSH_HOST:$WORK_DIR/"
 
       - name: .env ni secret'dan yozish
         env:
           ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
+          if [ -z "$ENV_FILE" ]; then
+            echo "::warning::ENV_FILE secret bo'sh - serverdagi .env o'z holida qoldirildi"
+            exit 0
+          fi
           printf '%s\n' "$ENV_FILE" \
             | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
               "install -d -m 700 '$WORK_DIR' && install -m 600 /dev/stdin '$WORK_DIR/.env'"
@@ -65,6 +70,8 @@ jobs:
             "APP='$APP' WORK_DIR='$WORK_DIR' bash -s" <<'EOF'
           set -euo pipefail
           cd "$WORK_DIR"
+          [ -s .env ] || { echo "XATO: $WORK_DIR/.env yo'q yoki bo'sh"; exit 1; }
+          grep -q '^BOT_TOKEN=.' .env || { echo "XATO: .env da BOT_TOKEN yo'q"; exit 1; }
 
           docker build -t "$APP" .
           docker rm -f "$APP" 2>/dev/null || true
@@ -75,8 +82,10 @@ jobs:
           docker image prune -f
 
           # Ishga tushdimi? Bo'lmasa log bilan yiqilamiz — yashil deploy + o'lik bot bo'lmasin.
-          sleep 10
-          if [ "$(docker inspect -f '{{.State.Running}}' "$APP")" != "true" ]; then
+          sleep 15
+          state=$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$APP")
+          if [ "$state" != "true 0" ]; then
+            echo "Konteyner holati: $state (kutilgani: true 0)"
             docker logs --tail 50 "$APP"
             exit 1
           fi

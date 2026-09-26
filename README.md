@@ -133,6 +133,11 @@ Workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 | `ENV_FILE` | `.env` faylining **to'liq matni** (`.env.example` asosida) | `BOT_TOKEN=123:ABC`<br>`TIMEZONE=Asia/Tashkent` |
 | `SSH_PORT` | *(ixtiyoriy)* SSH port, default `22` | `2222` |
 
+**Diqqat:** `ENV_FILE` — serverdagi `.env` ning yagona manbasi, har deploy'da
+uning ustiga yoziladi. Secret bo'sh bo'lsa workflow serverdagi `.env` ga
+tegmaydi; `.env` umuman bo'lmasa deploy qizil bo'lib to'xtaydi (bot o'lik
+holatda qolmaydi).
+
 Yangi sozlama qo'shish kerak bo'lsa — faqat `ENV_FILE` secret'ini tahrirlash
 kifoya, workflow'ga tegish shart emas.
 
