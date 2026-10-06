@@ -26,4 +26,19 @@ DEFAULT_LEAD_DAYS = int(os.getenv("DEFAULT_LEAD_DAYS", "7"))
 # eslatmalarni qayta ishga tushganda baribir yuboradi
 CATCHUP_MINUTES = int(os.getenv("CATCHUP_MINUTES", "15"))
 
+# Botning shaxsiy chatidan faqat shu odamlar foydalanishi mumkin.
+# Standart: faqat @maxmudmaxmudov. Kerak bo'lsa .env orqali o'zgartiriladi:
+#   ADMIN_USERNAMES=maxmudmaxmudov,boshqa_user
+#   ADMIN_IDS=982203491        <- username o'zgarsa ham ishlaydi (ishonchliroq)
+ADMIN_USERNAMES = {
+    name.strip().lstrip("@").lower()
+    for name in os.getenv("ADMIN_USERNAMES", "maxmudmaxmudov").split(",")
+    if name.strip()
+}
+ADMIN_IDS = {
+    int(value.strip())
+    for value in os.getenv("ADMIN_IDS", "").split(",")
+    if value.strip().isdigit()
+}
+
 DB_PATH = os.getenv("DB_PATH", "bot.db")

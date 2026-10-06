@@ -62,6 +62,26 @@ Kunning birinchi xabari "💰 Bugun to'lov kuni!", keyingilari
 Barcha vaqtlar `.env` dagi `TIMEZONE` bo'yicha hisoblanadi (standart:
 `Asia/Tashkent`) — server UTC'da turgan bo'lsa ham vaqt siljimaydi.
 
+## Kim foydalana oladi
+
+Botning shaxsiy chatidagi barcha buyruqlar **faqat ruxsat berilgan odam** uchun
+ishlaydi. Standart: `@maxmudmaxmudov`. Boshqa hech kim buyruq bera olmaydi —
+javob sifatida "sizda ruxsat yo'q" xabarini oladi.
+
+Ro'yxatni `.env` orqali o'zgartirish mumkin:
+
+```
+ADMIN_USERNAMES=maxmudmaxmudov,ikkinchi_admin
+ADMIN_IDS=982203491
+```
+
+`ADMIN_IDS` — Telegram raqamli ID'si. Username o'zgarishi mumkin, ID esa yo'q,
+shuning uchun ishonchliroq. Ikkisi ham ishlaydi: biri mos kelsa, ruxsat beriladi.
+
+Cheklov **faqat shaxsiy chatga** tegishli. Guruhlarda bot avvalgidek hamma
+a'zolarni "tanilgan odamlar" sifatida eslab qolishda davom etadi — aks holda
+`/new_reminder` da odamlarni tanlash imkoni bo'lmay qolardi.
+
 ## Buyruqlar (botning shaxsiy chatida)
 
 Shaxsiy chatda `/` bosilsa, buyruqlar menyusi o'zi chiqadi — ro'yxat

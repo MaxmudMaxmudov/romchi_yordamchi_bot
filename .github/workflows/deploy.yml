@@ -73,21 +73,53 @@ jobs:
           [ -s .env ] || { echo "XATO: $WORK_DIR/.env yo'q yoki bo'sh"; exit 1; }
           grep -q '^BOT_TOKEN=.' .env || { echo "XATO: .env da BOT_TOKEN yo'q"; exit 1; }
 
-          docker build -t "$APP" .
-          docker rm -f "$APP" 2>/dev/null || true
-          docker run -d --name "$APP" --restart unless-stopped \
-            -v "$PWD/.env:/app/.env:ro" \
-            -v "$APP-data:/data" \
-            "$APP"
-          docker image prune -f
+          # Diagnostika: build yiqilsa sababi shu yerda ko'rinadi
+          echo "--- Disk ---"
+          df -h "$WORK_DIR" | tail -1
+          echo "--- Xotira ---"
+          free -h 2>/dev/null | head -2 || true
+          echo "--- Docker joy ---"
+          docker system df 2>/dev/null || true
 
-          # Ishga tushdimi? Bo'lmasa log bilan yiqilamiz — yashil deploy + o'lik bot bo'lmasin.
+          # Yiqilgan buildlarning qoldiqlari diskni to'ldiradi — build'dan oldin tozalaymiz.
+          # Volume'larga tegmaydi, ya'ni bot.db saqlanib qoladi.
+          docker system prune -f || true
+
+          # Hozir ishlayotgan image — yiqilsa shunga qaytamiz
+          OLD_IMAGE="$(docker inspect -f '{{.Image}}' "$APP" 2>/dev/null || true)"
+          echo "Hozirgi image: ${OLD_IMAGE:-(topilmadi)}"
+
+          docker build -t "$APP" .
+
+          start_container() {
+            docker run -d --name "$APP" --restart unless-stopped \
+              -v "$PWD/.env:/app/.env:ro" \
+              -v "$APP-data:/data" \
+              "$1"
+          }
+
+          docker rm -f "$APP" 2>/dev/null || true
+          start_container "$APP"
+          docker image prune -f || true
+
+          # Ishga tushdimi? Bo'lmasa — eski versiyaga qaytib, qizil bilan yiqilamiz.
+          # Maqsad: "yashil deploy + o'lik bot" ham, "qizil deploy + o'lik bot" ham bo'lmasin.
           sleep 15
-          state=$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$APP")
+          state=$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$APP" 2>/dev/null || echo "yo'q")
           if [ "$state" != "true 0" ]; then
-            echo "Konteyner holati: $state (kutilgani: true 0)"
-            docker logs --tail 50 "$APP"
+            echo "XATO: konteyner holati '$state' (kutilgani: 'true 0'). Loglar:"
+            docker logs --tail 50 "$APP" 2>&1 || true
+            if [ -n "$OLD_IMAGE" ]; then
+              echo "--- Eski versiyaga qaytaraman ---"
+              docker rm -f "$APP" 2>/dev/null || true
+              start_container "$OLD_IMAGE"
+              sleep 5
+              docker inspect -f 'Rollback holati: {{.State.Running}}' "$APP" || true
+            else
+              echo "Qaytadigan eski image yo'q — bot to'xtadi, qo'lda ko'tarish kerak."
+            fi
             exit 1
           fi
+          echo "--- Yangi versiya ishlayapti ---"
           docker logs --tail 20 "$APP"
           EOF

@@ -12,11 +12,13 @@ Matnlar:
 - 1-matn muddat oldi oynasida, 2-matn muddat o'tgandan keyin yuboriladi.
   To'xtatish: /stop (shu sikl), /pause (butunlay), /resume (qaytarish).
 
-Bu handlerlar faqat botning shaxsiy chatida (private) ishlaydi.
+Bu handlerlar faqat botning shaxsiy chatida (private) va faqat ruxsat
+berilgan odamlar uchun ishlaydi (config.ADMIN_USERNAMES / ADMIN_IDS).
 """
 from __future__ import annotations
 
 import datetime
+import logging
 from html import escape
 
 from aiogram import F, Router
@@ -27,12 +29,63 @@ from aiogram.types import CallbackQuery, Message
 import database as db
 import keyboards as kb
 import timeslots as ts
-from config import DEFAULT_LEAD_DAYS, DEFAULT_TIME, TZ
+from config import ADMIN_IDS, ADMIN_USERNAMES, DEFAULT_LEAD_DAYS, DEFAULT_TIME, TZ
 from states import NewReminder
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 router.message.filter(F.chat.type == "private")
 router.callback_query.filter(F.message.chat.type == "private")
+
+NOT_ALLOWED_TEXT = (
+    "⛔️ Bu bot shaxsiy foydalanish uchun — sizda ruxsat yo'q.\n"
+    "Agar bu xato bo'lsa, bot egasiga murojaat qiling."
+)
+
+
+def is_allowed(user) -> bool:
+    """Foydalanuvchi botni boshqarishga haqlimi? user_id ustun, keyin username."""
+    if user is None:
+        return False
+    if user.id in ADMIN_IDS:
+        return True
+    return (user.username or "").lower() in ADMIN_USERNAMES
+
+
+@router.message.outer_middleware()
+async def allow_only_admins(handler, event, data):
+    """
+    Shaxsiy chatdagi har qanday xabarni filtrlardan oldin tekshiramiz.
+    Guruh xabarlariga tegmaymiz — ular tracking router'iga o'tishi kerak.
+    """
+    if event.chat.type != "private":
+        return await handler(event, data)
+    if not is_allowed(event.from_user):
+        user = event.from_user
+        logger.warning(
+            "Ruxsatsiz urinish: id=%s username=%s matn=%r",
+            getattr(user, "id", None), getattr(user, "username", None), (event.text or "")[:40],
+        )
+        await event.answer(NOT_ALLOWED_TEXT)
+        return
+    return await handler(event, data)
+
+
+@router.callback_query.outer_middleware()
+async def allow_only_admins_callbacks(handler, event, data):
+    if event.message is not None and event.message.chat.type != "private":
+        return await handler(event, data)
+    if not is_allowed(event.from_user):
+        logger.warning(
+            "Ruxsatsiz tugma: id=%s username=%s data=%r",
+            getattr(event.from_user, "id", None),
+            getattr(event.from_user, "username", None),
+            event.data,
+        )
+        await event.answer("⛔️ Sizda ruxsat yo'q", show_alert=True)
+        return
+    return await handler(event, data)
 
 
 HELP_TEXT = (
