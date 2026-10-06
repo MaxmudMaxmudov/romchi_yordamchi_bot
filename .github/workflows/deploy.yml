@@ -64,10 +64,21 @@ jobs:
             | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
               "install -d -m 700 '$WORK_DIR' && install -m 600 /dev/stdin '$WORK_DIR/.env'"
 
+      # Image serverda emas, shu runner'da build qilinadi: serverdagi `docker build`
+      # uch marta yiqilgan (disk/xotira), runner'da esa har safar muvaffaqiyatli o'tadi.
+      # Serverga tayyor image yuboriladi — u yerda faqat `docker load` va `docker run` qoladi.
+      - name: Image'ni build qilib serverga yuborish
+        run: |
+          set -o pipefail
+          docker build -t "$APP:$GITHUB_SHA" .
+          docker save "$APP:$GITHUB_SHA" | gzip -1 \
+            | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "gunzip | docker load"
+
       - name: Build va qayta ishga tushirish
         run: |
           ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "APP='$APP' WORK_DIR='$WORK_DIR' bash -s" <<'EOF'
+            "APP='$APP' WORK_DIR='$WORK_DIR' TAG='$GITHUB_SHA' bash -s" <<'EOF'
           set -euo pipefail
           cd "$WORK_DIR"
           [ -s .env ] || { echo "XATO: $WORK_DIR/.env yo'q yoki bo'sh"; exit 1; }
@@ -89,7 +100,9 @@ jobs:
           OLD_IMAGE="$(docker inspect -f '{{.Image}}' "$APP" 2>/dev/null || true)"
           echo "Hozirgi image: ${OLD_IMAGE:-(topilmadi)}"
 
-          docker build -t "$APP" .
+          # Image allaqachon yuklangan (docker load) — serverda build qilmaymiz
+          docker image inspect "$APP:$TAG" >/dev/null \
+            || { echo "XATO: $APP:$TAG image serverda topilmadi"; exit 1; }
 
           start_container() {
             docker run -d --name "$APP" --restart unless-stopped \
@@ -99,7 +112,8 @@ jobs:
           }
 
           docker rm -f "$APP" 2>/dev/null || true
-          start_container "$APP"
+          start_container "$APP:$TAG"
+          docker tag "$APP:$TAG" "$APP:latest" || true
           docker image prune -f || true
 
           # Ishga tushdimi? Bo'lmasa — eski versiyaga qaytib, qizil bilan yiqilamiz.
